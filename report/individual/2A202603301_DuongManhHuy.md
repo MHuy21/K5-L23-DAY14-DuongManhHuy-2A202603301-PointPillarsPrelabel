@@ -19,19 +19,53 @@ Ghi **trước** khi chạy `scripts/pp_sweep.py`, rồi commit và push ngay (l
 
 | Cấu hình | Xóa | Thêm | Sửa | Chi phí |
 |---|---:|---:|---:|---:|
-| Gốc | | | | |
-| `best_config.json` | | | | |
+| Gốc | 40 | 4 | 3 | 17.5 |
+| `best_config.json` | 16 | 8 | 3 | 14.3 |
 
-- Tham số đã đổi trong `best_config.json`: ...
-- Kết quả leave-one-out (dán các dòng `scripts/pp_sweep.py` in ra): ...
-- Cấu hình có ổn định trên từng frame không? Vì sao tôi vẫn chọn (hoặc không chọn) nó: ...
+- Tham số đã đổi trong `best_config.json`: chỉ đổi `score_thr` từ 0.1 lên **0.4**. `min_points` giữ 0, vì ở mức `score_thr` 0.4 cả ba mức 0, 5, 10 cho cùng chi phí 14.3. Sweep thử 15 cấu hình: `score_thr` ∈ {0.1, 0.2, 0.3, 0.4, 0.5} × `min_points` ∈ {0, 5, 10}.
+- Chi phí từng frame của một số cấu hình (trích từ `sweep.csv`):
+
+  | `score_thr` / `min_points` | s02f12 | s04f58 | s05f22 | Tổng |
+  |---|---:|---:|---:|---:|
+  | 0.1 / 0 (gốc) | 3.1 | 4.0 | 10.4 | 17.5 |
+  | 0.2 / 10 | 3.1 | **2.8** | 10.1 | 16.0 |
+  | 0.3 / 0 | **2.5** | 3.5 | 9.8 | 15.8 |
+  | **0.4 / 0 (chọn)** | 4.2 | 2.9 | **7.2** | **14.3** |
+  | 0.5 / 0 | 6.8 | 3.3 | 8.8 | 18.9 |
+
+- Kết quả leave-one-out (dán các dòng `scripts/pp_sweep.py` in ra):
+
+  ```
+  s02f12: cấu hình chọn {'score_thr': '0.4', 'min_points': '0'} → 4.2 (tốt nhất có thể 2.5)
+  s04f58: cấu hình chọn {'score_thr': '0.4', 'min_points': '0'} → 2.9 (tốt nhất có thể 2.8)
+  s05f22: cấu hình chọn {'score_thr': '0.2', 'min_points': '10'} → 10.1 (tốt nhất có thể 7.2)
+  ```
+
+- Cấu hình có ổn định trên từng frame không? Vì sao tôi vẫn chọn (hoặc không chọn) nó:
+  - **Không ổn định.** Mỗi frame có ngưỡng tốt nhất khác nhau: s02f12 tốt nhất ở 0.3, s04f58 ở 0.2, s05f22 ở 0.4. Cấu hình 0.4 thắng trên tổng chủ yếu nhờ **s05f22**, frame có nhiều box thừa nhất (23 box phải xóa ở cấu hình gốc).
+  - **Leave-one-out cho thấy mức cải thiện thật nhỏ hơn nhiều.** Cộng chi phí của 3 lượt chấm trên frame bỏ ra: 4.2 + 2.9 + 10.1 = **17.2**, chỉ thấp hơn cấu hình gốc 0.3 (khoảng 2%). Trong khi đó, chọn và chấm trên cùng 3 frame cho kết quả 14.3 (giảm khoảng 18%). Ở s02f12, cấu hình chọn được (4.2) còn **tệ hơn cấu hình gốc** (3.1), vì ở ngưỡng 0.4 các box thật có score 0.3–0.4 bị lọc mất.
+  - **Tôi vẫn chọn `score_thr = 0.4`** vì trong 15 cấu hình đã thử, nó có chi phí tổng thấp nhất (14.3). Nó cũng có tổng phần chênh so với mức tốt nhất của từng frame nhỏ nhất: 1.7 + 0.1 + 0 = 1.8, so với 3.0 của mức 0.3 / 10 và 3.5 của mức 0.2 / 10. Lựa chọn này chỉ dựa trên 3 frame, nên tôi xem tập B là phép kiểm tra thật.
 
 ## 3. Trước/sau (bước 8)
 
-![so sánh](../../d14_2A202603301/compare/<frame>.jpg)
+![so sánh](../../d14_2A202603301/compare/s05f22.jpg)
 
-- `scripts/pp_compare.py` báo giảm (hoặc tăng) ...% công sửa trên tập A.
-- Dự đoán ở mục 1 đúng hay sai? Giải thích bằng số box xóa/thêm/sửa: ...
+*Frame s05f22: bên trái là cấu hình gốc (xóa 23, thêm 3, sửa 1 → 10.4), bên phải là `score_thr = 0.4` (xóa 9, thêm 4, sửa 1 → 7.2). Xanh lá là box đúng, vàng cần sửa, đỏ thừa (phải xóa), xanh dương bị sót (phải thêm).*
+
+- `scripts/pp_compare.py` báo **giảm 18%** công sửa trên tập A (17.5 → 14.3). Chỉ đổi một tham số: `score_thr: 0.1 -> 0.4`.
+
+  | Frame | Chi phí gốc | `score_thr` 0.4 |
+  |---|---:|---:|
+  | s02f12 | 3.1 | 4.2 |
+  | s04f58 | 4.0 | 2.9 |
+  | s05f22 | 10.4 | 7.2 |
+  | **Tổng** | **17.5** | **14.3** |
+
+- Dự đoán ở mục 1 đúng hay sai? Giải thích bằng số box xóa/thêm/sửa:
+  - **Dự đoán đúng.** `score_thr` là tham số có tác dụng, và mức tốt nhất đúng là 0.4. Tăng lên 0.5 thì chi phí tăng vọt lên 18.9 (thêm 16), đúng như lo ngại ở mục 1. `min_points` ít tác dụng: ở ngưỡng 0.1 nó chỉ giảm từ 17.5 xuống 16.9, ở ngưỡng 0.4 thì không đổi gì.
+  - **Giải thích bằng số:** xóa giảm từ 40 xuống 16 (bớt 24 × 0.3 = −7.2), thêm tăng từ 4 lên 8 (mất 4 box thật × 1.0 = +4.0), sửa giữ nguyên 3. Tổng cộng −3.2, khớp với ước lượng ở mục 1 (bớt khoảng 24 box xóa, mất khoảng 4 box thật, giảm khoảng 3 điểm).
+  - **Ảnh s05f22** cho thấy rõ cơ chế này: phần lớn hộp đỏ (hộp trùm bụi cây và cọc rào hai bên đường) biến mất ở ảnh bên phải. Đổi lại, một xe thật ở xa phía trước (khoảng 38 m, score 0.35) chuyển thành xanh dương, tức bị sót.
+  - **Nhưng không đúng ở mọi frame.** s02f12 tăng từ 3.1 lên **4.2**. Frame này ít hộp thừa (chỉ 7 hộp), nên ngưỡng 0.4 bớt được 3 hộp xóa (−0.9) nhưng mất 2 box thật (+2.0): box ở ngay tâm LiDAR (score 0.33, xe thu dữ liệu mà tôi giữ trong `ref_A.json`) và một Cyclist phía sau (score 0.39). Vì vậy mức giảm 18% phụ thuộc nhiều vào s05f22. Leave-one-out ở mục 2 cho thấy trên frame chưa dùng để chọn, mức giảm chỉ khoảng 2%.
 
 ## 4. Tập B
 
