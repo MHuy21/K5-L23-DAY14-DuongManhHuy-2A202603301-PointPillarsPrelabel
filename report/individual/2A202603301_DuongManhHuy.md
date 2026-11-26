@@ -78,10 +78,32 @@ Số đo từ `scripts/pp_prelabel.py --frames d14_2A202603301/frames_B.txt --co
 
 | Xóa | Thêm | Sửa | Chi phí |
 |---:|---:|---:|---:|
-| | | | |
+| 111 | 46 | 19 | 88.8 |
 
-- Loại box tốn công sửa nhất ở tập B: ...
+`ref_B.json` có 193 box trong 50 m (Car 138, Cyclist 32, Pedestrian 14, Truck 6, Bus 3). `pred_B.json` có 258 box, trong đó 147 box ghép được với nhãn sửa tay. Quy ước của tập A vẫn giữ nguyên: không gán nhãn xe thu dữ liệu (đã xóa 6 box đó trên CVAT).
+
+- **Đối chứng trên tập B:** tôi chạy thêm cấu hình gốc (`score_thr` 0.1) trên cùng `ref_B.json`. Kết quả: xóa 245, thêm 42, sửa 21 → **126.0**. `best_config.json` giảm xuống 88.8, tức **giảm khoảng 30%**. Mức này gần với mức giảm 27% trên tập A. Tôi tách công sửa theo frame và đếm: cấu hình tune **tốt hơn hoặc bằng cấu hình gốc ở cả 12 frame**. Riêng s05f12 gần như không đổi (11.5 → 11.2).
+- Chi phí từng frame: s01f08 4.8 · s01f24 7.5 · s01f49 6.1 · s02f21 4.1 · s02f37 4.0 · s02f53 5.4 · **s03f21 17.1** · s03f41 4.2 · s03f57 7.1 · s05f12 11.2 · s05f28 7.3 · s05f44 10.0.
+- Loại box tốn công sửa nhất ở tập B. Chi phí tách theo lớp (xóa tính theo lớp model dự đoán; thêm và sửa tính theo lớp trong `ref_B`):
+
+  | Lớp | Xóa | Thêm | Sửa | Chi phí | Số box trong `ref_B` |
+  |---|---:|---:|---:|---:|---:|
+  | Car | 70 | 12 | 9 | 37.5 | 138 |
+  | Cyclist | 39 | 17 | 4 | **30.7** | 32 |
+  | Pedestrian | 2 | 10 | 4 | 12.6 | 14 |
+  | Truck | 0 | 4 | 2 | 5.0 | 6 |
+  | Bus | 0 | 3 | 0 | 3.0 | 3 |
+
+  - **Tổng chi phí cao nhất là Car (37.5), chủ yếu do box thừa.** 70 box Car phải xóa (21 điểm), phần lớn là hộp trùm bụi cây, hàng rào hoặc hộp trùng nhau. Score trung vị của các box bị xóa vẫn khoảng 0.47, tức ngay trên ngưỡng 0.4, nên tăng `score_thr` không lọc được nhóm này.
+  - **Tính trên mỗi vật thật, Cyclist tốn nhất.** Chỉ có 32 Cyclist thật nhưng chi phí 30.7, gần 1 điểm cho mỗi vật. Model vừa sinh 39 box Cyclist thừa (cọc, biển báo, xe máy dựng không người), vừa bỏ sót 17 Cyclist thật. **Pedestrian** cũng tương tự: 10 trên 14 người bị sót (+10).
+  - **Truck và Bus bị sót gần hết** (7 trên 9). Model KITTI không có lớp này, nên chỉ đổi được từ Car theo kích thước. Hộp dự đoán của xe lớn thường không khớp đủ IoU 0.3.
+  - **Box sửa (19)** chủ yếu do sai kích thước (13 box) và sai hướng (6 box). Sai lớp ít (3 box: 2 Car → Truck, 1 Car → Cyclist).
+  - **s03f21 tốn nhất (17.1):** phải thêm 13 box, gồm 6 Pedestrian, 5 Car và 2 Cyclist. Frame này có một nhóm người đi bộ cách xe khoảng 10–34 m mà model không phát hiện được.
 
 ## 5. Giới hạn
 
-- Nêu ít nhất 2 giới hạn (ví dụ: chỉ 3 frame tune; model KITTI không có Truck/Bus; chi phí là công thức, chưa phải thời gian sửa thật): ...
+- **Chỉ tune trên 3 frame.** Leave-one-out chỉ có 3 lượt nên chưa đủ để khẳng định cấu hình tổng quát. Kết quả tập B (giảm khoảng 30%, cả 12 frame không tệ hơn) là bằng chứng tốt hơn, nhưng vẫn chỉ là 12 frame của 4 chuỗi.
+- **Ngưỡng score chung không phân biệt lớp.** Ngưỡng 0.4 có lợi cho Car (bớt box thừa) nhưng làm mất Cyclist và Pedestrian có score thấp. Sweep chỉ thử `score_thr` × `min_points`, chưa thử ngưỡng riêng từng lớp (`thr_car`, `thr_cyc`, `thr_ped`). Ở tập B, 27 trên 46 box phải thêm là Cyclist hoặc Pedestrian, nên ngưỡng riêng cho hai lớp này có thể giảm chi phí đáng kể.
+- **Model KITTI không có Truck/Bus.** Hai lớp này chỉ được suy ra từ kích thước box Car, nên 7 trên 9 xe lớn bị sót. Model cũng được huấn luyện trên LiDAR KITTI (Velodyne 64 tia, góc nhìn phía trước). Dữ liệu VF có trục và mật độ điểm khác, phải chạy 4 lượt xoay để phủ 360°.
+- **Chi phí là công thức, chưa phải thời gian sửa thật.** Trọng số 0.3/1.0/0.5 là ước lượng. Trên CVAT, xóa một box gần như tức thì, còn vẽ thêm một Cyclist bị che có thể mất vài phút. Tôi không bật telemetry nên không có số đo thời gian thật.
+- **Nhãn tham chiếu do chính tôi sửa** (một người, một lượt, không có người kiểm chéo). Chi phí còn phụ thuộc vào quyết định không gán nhãn xe thu dữ liệu: repo Day 14 không quy định trường hợp này, tôi áp dụng thống nhất cho cả A và B. Box ở khoảng cách 30–50 m thưa điểm (13 trên 46 box phải thêm nằm ngoài 30 m) nên khó xác định chính xác.
